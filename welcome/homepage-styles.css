@@ -1,0 +1,30 @@
+body {
+    font-family: "Lucida Console", "Courier New", monospace;
+    text-align: center;
+}
+
+h1 {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+p {
+  font-size: 20px;
+  padding-right: 30px;
+  padding-top: 25px;
+  padding-left: 30px;
+}
+
+div {
+  padding-bottom: 18px;
+}
+
+header {
+  background-color: darkgreen;
+  min-height:120px;
+}
+
+footer {
+  background-color: darkgreen;
+  min-height:500px;
+}

@@ -1,0 +1,25 @@
+body {
+    min-width:275px;
+    min-height:80px;
+    text-align: center;
+}
+
+div {
+    padding-top: 10px;
+    padding-right: 10px;
+    padding-bottom: 10px;
+    padding-left: 10px;
+  }
+
+  h1 {
+    padding-top: 10px;
+    padding-bottom: 5px;
+  }
+
+  #timer {
+    font-size: 20px;
+  }
+
+  * {
+    font-family: "Lucida Console", "Courier New", monospace;
+}
