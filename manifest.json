@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Tomato Timer",
     "description": "A productivity timer modeled after the Pomodoro Technique that alerts users when it is time to work and take breaks",
-    "version": "1.0",
+    "version": "1.1",
     "icons": { "16": "logo-photos/cover16.png",
            "48": "logo-photos/cover48.png",
           "128": "logo-photos/cover128.png" },
