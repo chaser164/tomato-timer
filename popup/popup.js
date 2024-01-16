@@ -1,176 +1,153 @@
-//See background.js for helpful links I referred to during this project
-
 const WORKTIME = 1500; //25 mins is 1500 secs
 const BREAKTIME = 300; //5 mins is 300 secs
+let isPaused = false;
+let timerOn = true;
+let timeToWork = true;
+let countdownTimeout;
 
-let timeToWork;
-let timerGoing;
-let tomatoMode;
-let waitRunning;
-let breakCounter;
 
 //Run the javascript once DOM is finished loading
 document.addEventListener('DOMContentLoaded', function() {
 
-    //Popup has been opened
-    chrome.runtime.sendMessage({ msg: "Popup open"}, (response) => {
-        if (response) {
-            //Align timeToWork, timerGoing, and tomatoMode values with the actual one in the background
-            timeToWork = response.timeToWork;
-            timerGoing = response.timerGoing;
-            tomatoMode = response.tomatoMode;
-            waitRunning = response.waitRunning;
-            breakCounter = response.breakCounter;
-            if (tomatoMode) {
-                document.getElementById('start').click(); 
-                //If timer is going, display the countdown from background.js
-                if (timerGoing) {
-                    if (waitRunning == 1) {
-                        wait(response.time);
-                    } else {
-                        //If a mismatch is detected, turn off tomato mode and reset as a failsafe
-                        document.getElementById('stop').click();
-                    }
-                } else {
-                    document.querySelector('#timer').innerHTML = formatTime(response.time);
-                }
-                //Give the pause button and label the correct icon and text
-                document.querySelector('#pause').innerHTML = '<i class="fa fa-' + (timerGoing ? 'pause' : 'play')  + '"></i>';
-                document.querySelector('#label').innerHTML = '<b>' + (timeToWork ? 'Time to work!' : 'Break time!') + (timerGoing ? '' : ' (paused)') + '</b>';
-                //Show the pause button and timer
-                document.getElementById('pause').style.display = 'inline';
-                document.getElementById('timer').style.display = 'inline';
-            } else {
-                document.getElementById('stop').click();
-                //Hide the pause button and timer and communicate that we're not in tomato mode
-                document.getElementById('pause').style.display = 'none';
-                document.getElementById('timer').style.display = 'none';
-                document.querySelector('#label').innerHTML = '<b>TOMATO MODE OFF</b>';
+    // Configure appropriately by checking storage
+    getData('deadline').then(deadline => {
+        getData('timeToWork').then(timeToWorkVal => {
+            timeToWork = timeToWorkVal;
+            // If deadilne found, resume timer
+            if(deadline) {
+                pausePlayVisuals(true, timeToWorkVal);
+                document.getElementById('start').checked = true;
+                const currentDate = new Date();
+                startTimer(deadline = Math.floor((deadline - currentDate.getTime()) / 1000))
+                return;
             }
-        }
+            getData('msLeft').then(msLeft => {
+                isPaused = true;
+                // If msLeft found, show paused timer
+                if(msLeft) {
+                    pausePlayVisuals(false, timeToWorkVal);
+                    document.getElementById('start').checked = true;
+                    document.querySelector('#timer').innerHTML = formatTime(Math.round(msLeft / 1000));
+                    return;
+                }
+                // Otherwise, turn the timer off
+                document.getElementById('stop').click();
+            });
+        });
     });
 
-    // Listen for the user starting tomato mode
+
+
+
+    // Listen for the user starting timer
     document.querySelector('#start').addEventListener('click', function() {
-        if (!tomatoMode && waitRunning == 0) {
-            //Communicate to background.js that tomato mode is requesting to be started
-            chrome.runtime.sendMessage({ msg: "GO", timeToWork: timeToWork}, (response) => {
-                if (response) {
-                    if (response.waitRunning == 0) {
-                        //Engage tomato mode and start timer
-                        tomatoMode = true;
-                        timerGoing = true; 
-                        timeToWork = true;
-                        //Give the pause button and label the correct icon and text
-                        document.querySelector('#pause').innerHTML = '<i class="fa fa-pause"></i>'; 
-                        document.querySelector('#label').innerHTML = '<b>Time to work!</b>';
-                        //Show pause button and timer
-                        document.getElementById('pause').style.display = 'inline';
-                        document.getElementById('timer').style.display = 'inline';
-                        //Display the countdown, amount specified in background.js
-                        waitRunning++;
-                        wait(response.time);
-                    }
-                }
-            });
-        } 
-        //If the program is not ready to transition to tomato mode, keep tomato mode off
-        else if (!tomatoMode) {
-            document.getElementById('stop').click();
+        if (timerOn) {
+            return;
         }
+        timerOn = true;
+        setData('timeToWork', true);
+        startTimer(WORKTIME);
     });
 
     //Listen for the user pausing and resuming the timer
     document.querySelector('#pause').addEventListener('click', function () {
-        if (timerGoing) {
-            //signify that timer has stopped
-            timerGoing = false;
-            //Switch the pause button icon and add ' (paused)' to the label
-            document.querySelector('#pause').innerHTML = '<i class="fa fa-play"></i>';
-            document.querySelector('#label').innerHTML = '<b>' + (timeToWork ? 'Time to work!' : 'Break time!') + ' (paused)</b>';
-            //Pass the message
-            chrome.runtime.sendMessage({ msg: "STOP", pause: true, timeToWork: timeToWork}, (response) => {
-                if (response) {
-                    //Display the static clock
-                    document.querySelector('#timer').innerHTML = formatTime(response.time);
-                }
-            });     
-            //Ensure wait isn't still running
-        } else if (waitRunning == 0) {
-            //Pass request to resume the timer
-            chrome.runtime.sendMessage({ msg: "GO", timeToWork: timeToWork}, (response) => {
-                if (response) {
-                    if (response.waitRunning == 0) {
-                        //Signify that the timer is starting
-                        timerGoing = true;
-                        //Switch the pause button icon and remove ' (paused)' from the label
-                        document.querySelector('#pause').innerHTML = '<i class="fa fa-pause"></i>'; 
-                        document.querySelector('#label').innerHTML = '<b>' + (timeToWork ? 'Time to work!' : 'Break time!') + '</b>';
-                        //Display the countdown, resuming from the place where the pause left off
-                        waitRunning++;
-                        wait(response.time);
-                    }
-                }
-            });  
-        }
+        getData('timeToWork').then(timeToWorkVal => {
+            if (isPaused) {
+                // Pause -> Play
+                getData('msLeft').then(msLeft => {
+                    const currentDate = new Date();
+                    setData('deadline', currentDate.getTime() + msLeft);
+                    removeData('msLeft');
+                    chrome.runtime.sendMessage({ action: `schedule ${timeToWorkVal ? 'work' : 'break'}`, delayInMinutes: msLeft / 60000 });
+                    countdown(Math.floor(msLeft / 1000))
+                })
+                pausePlayVisuals(true, timeToWorkVal);
+                isPaused = false;
+            }
+            else {
+                // Play -> Pause
+                chrome.runtime.sendMessage({ action: 'clear' });
+                clearTimeout(countdownTimeout);
+                isPaused = true;
+                getData('deadline').then(deadline => {
+                    const currentDate = new Date();
+                    setData('msLeft', deadline - currentDate.getTime());
+                    removeData('deadline');
+                })
+                pausePlayVisuals(false, timeToWorkVal);
+            }
+        });
     });
 
-    //Listen for the user stopping tomato mode
+    //Listen for the user turning off
     document.querySelector('#stop').addEventListener('click', function() {
-        if (tomatoMode) {
-            document.querySelector('#label').innerHTML = '<b>TOMATO MODE OFF</b>';
-            tomatoMode = false;
-            timerGoing = false;
-            breakCounter = 0;
-            //Hide pause button and label
-            document.getElementById('pause').style.display = 'none';
-            document.getElementById('timer').style.display = 'none';
-            //Communicate to background.js that tomato mode is stopped
-            chrome.runtime.sendMessage({ msg: "STOP", pause: false});    
+        chrome.runtime.sendMessage({ action: 'clear' });
+        if (!timerOn) {
+            return;
         }
+        timerOn = false;
+        // Remove any data possible
+        removeData('deadline');
+        removeData('msLeft');
+        document.getElementById('pause').style.display = 'none';
+        document.getElementById('timer').style.display = 'none';
+        document.getElementById('label').style.display = 'none';
+        // stop countdown and pause
+        clearTimeout(countdownTimeout);
+        isPaused = true
     });
 });
 
-function wait(amount) {
-    //If wait is being run more than one at a time, exit tomato mode and reset as failsafe
-    if (waitRunning > 1) {
-        document.getElementById('stop').click();
-        waitRunning = 0;
-        return;
-    }
-    //Quit out of function if we're not in tomato mode anymore
-    if (!tomatoMode || !timerGoing) {
-        waitRunning--;
-        return;
-    }
-    if (amount == 0) {
-        if (timeToWork) {
-            document.querySelector('#label').innerHTML = '<b>Break time!</b>';
-            breakCounter++;
-            if (breakCounter == 4) {
-                //long break and reset break counter
-                breakCounter = 0;
-                wait(BREAKTIME * 3);
-              } 
-              else {
-                wait(BREAKTIME);
-              }
-        }
-        else {
-            document.querySelector('#label').innerHTML = '<b>Time to work!</b>';
-            wait(WORKTIME);
-        }
-        timeToWork = !timeToWork;
-        return;
-    }
-    document.querySelector('#timer').innerHTML = formatTime(amount);
-    setTimeout(function () {
-        wait(amount - 1)
-    }, 1000)
+// Update button and text when pause/play is clicked
+function pausePlayVisuals(timerGoing, timeToWork) {
+    // Give the pause button and label the correct icon and text
+    document.querySelector('#pause').innerHTML = '<i class="fa fa-' + (timerGoing ? 'pause' : 'play')  + '"></i>';
+    document.querySelector('#label').innerHTML = '<b>' + (timeToWork ? 'Time to work!' : 'Break time!') + (timerGoing ? '' : ' (paused)') + '</b>';
+    // Show the pause button and timer
+    document.getElementById('pause').style.display = 'inline';
+    document.getElementById('timer').style.display = 'inline';
 }
 
+function startTimer(initTime, timeToWorkInput = null) {
+    getData('timeToWork').then(timeToWorkVal => {
+        // Only schedule alarms when not a visual reset (i.e. starting or resuming)
+        if(timeToWorkInput) {
+            timeToWorkVal = timeToWorkInput
+        }
+        else {
+            chrome.runtime.sendMessage({ action: `schedule ${timeToWorkVal ? 'work' : 'break'}`, delayInMinutes: initTime / 60 });
+        }
+        // allow countdown
+        isPaused = false;
+        // Show timer with timer going and work time
+        pausePlayVisuals(true, timeToWorkVal);
+        const currentDate = new Date();
+        setData('deadline', currentDate.getTime() + initTime * 1000);
+        countdown(initTime);
+        // Show label
+        document.getElementById('label').style.display = 'inline';
+    });
+}
+
+// continuously update countdown
+function countdown(initTime) {
+    // Stop countdown at 0
+    if(initTime <= 0)  {
+        // Update local timeToWork variable
+        timeToWork = !timeToWork;
+        startTimer(timeToWork ? WORKTIME : BREAKTIME, timeToWork);
+        return;
+    }
+    // Stop countdown when paused
+    if (isPaused) {
+        return;
+    }
+    document.querySelector('#timer').innerHTML = formatTime(initTime);
+    countdownTimeout = setTimeout(() => countdown(initTime - 1), 1000);
+}
+
+// Formats seconds as MM:SS
 function formatTime(secs) {
-    //Format the seconds value into a 'minutes:seconds' string
     let minutes = Math.floor(secs / 60);
     let seconds = secs - minutes * 60;
     let minPlaceholder = '';
@@ -185,10 +162,15 @@ function formatTime(secs) {
 
 }
 
-//Keeps the service worker alive
-//See background.js for the code this is connected to. I got this code from here:
-//https://stackoverflow.com/questions/66618136/persistent-service-worker-in-chrome-extension/66618269#66618269
-;(function connect() {
-chrome.runtime.connect({name: 'keepAlive'})
-    .onDisconnect.addListener(connect);
-})();
+// get chrome storage data
+function getData(key) {
+    return new Promise((resolve, reject) => {
+        chrome.storage.sync.get([key], function(result) {
+        if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+        } else {
+            resolve(result[key]);
+        }
+        });
+    });
+}
